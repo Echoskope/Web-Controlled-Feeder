@@ -4,7 +4,43 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <Arduino.h>
-
+/**************************************/
+//  This code was designed to run on:
+//    Unexpected Maker FeatherS3 ESP32-S3 Board
+//    Adafruit Latching Relay FeatherWing PID:2923
+//  
+//  The FeatherWing wiring:
+//    Set wired to pin 17
+//    Reset wired to 18
+//
+//  The relay COM and NO are wired to
+//  the Quick Feed Automatic Feeder
+//  using wires soldered to the manual
+//  feed button on the PCB.
+//
+//  This code won't work if the feeder
+//  controller has been power cycled,
+//  as it requires the user to set
+//  the serving size upon power up on
+//  first manual feed trigger. After
+//  the serving size is set, it works.
+//
+//  The future:
+//    Add in sonar/ultrasonic sensor for
+//    detecting height of food in tank.
+//    (this is currently simulated via
+//    the on board ambient light sensor)
+//
+//    Add a beam break sensor in the
+//    discharge tube to sense when food
+//    was successfully delivered.
+//
+//  Known Issues:
+//    Because this uses HTTP GET, web
+//    browser cache can cause it to fail.
+//    It is better to use a tool like
+//    CURL to trigger the cycle.
+/**************************************/
 #define PIN_1 17
 #define PIN_2 18
 #define ALS 4
