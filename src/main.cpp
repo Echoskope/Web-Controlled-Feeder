@@ -1,10 +1,24 @@
-#include <WiFi.h>
-#include <WebServer.h>
-#include <esp_task_wdt.h>
-#include <DNSServer.h>
-#include <Preferences.h>
-#include <Arduino.h>
-/**************************************/
+/**********************************************************/
+//  This code was written mostly by Microsoft CoPilot. 
+//
+//  General Operation:
+//    Upon power up, the ESP32 will boot into
+//    Wifi AP mode for 30 seconds (blue on board LED 
+//    will be steadily illuminated). During this time
+//    you can connect to the broadcasted network
+//    to configure the local wifi network's credentials.
+//
+//    If nothing connects after 30 seconds, the board
+//    continues to boot (blue on board LED will start
+//    to blink), and will join the local wifi network
+//    with the stored credentials. After fully booted
+//    you can go to the http://<IP Address>/ URL to
+//    change the Wifi credentials. If you go to the
+//    http://<IP Address>/feed URL it will cause the
+//    latching relay to cycle. Local browser caching
+//    can cause issues, so ensure it does a fresh
+//    load, for example by using CURL.
+//
 //  This code was designed to run on:
 //    Unexpected Maker FeatherS3 ESP32-S3 Board
 //    Adafruit Latching Relay FeatherWing PID:2923
@@ -40,16 +54,29 @@
 //    browser cache can cause it to fail.
 //    It is better to use a tool like
 //    CURL to trigger the cycle.
-/**************************************/
-#define PIN_1 17
-#define PIN_2 18
-#define ALS 4
+/**********************************************************/
+
+#include <WiFi.h>
+#include <WebServer.h>
+#include <esp_task_wdt.h>
+#include <DNSServer.h>
+#include <Preferences.h>
+#include <Arduino.h>
+
+#define PIN_1 17 // For the Latching Relay Set
+#define PIN_2 18 // For the Latching Relay Reset
+#define ALS 4 // Built-in Ambient Light Sensor on the FeatherS3 board
 
 Preferences preferences;
 QueueHandle_t taskQueue;
 WebServer server(80);
 DNSServer dnsServer;
 
+//**********************************************//
+// the apSSID and apPassword is for when the ESP32
+// starts up in Wifi AP mode, with IP address of
+// apIP.
+//**********************************************//
 const char* apSSID = "ESP32_Config";
 const char* apPassword = "12345678";
 IPAddress apIP(192,168,4,1);
@@ -59,7 +86,7 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
-void handleSave() {
+void handleSave() { // If you open the web root page, you can change the wifi credentials 
   if (server.hasArg("ssid") && server.hasArg("password")) {
     String ssid = server.arg("ssid");
     String password = server.arg("password");
@@ -95,11 +122,11 @@ void handleTank2(){
   server.send(200, "text/html", string);
 }
 
-void handleFeed() {
+void handleFeed() { // the /feed GET URL occurred, we need to trigger he task to cycle the relay
   int taskTrigger = 1;
   xQueueSend(taskQueue, &taskTrigger, portMAX_DELAY);
   //erver.send(200, "text/html", "Feeder triggered\n");
-  handleTank2();
+  handleTank2(); // This is to print back some information to the user
 }
 
 /*
@@ -118,7 +145,17 @@ void handlePost() {
 }
 */
 
-void startAPMode() {
+//**********************************************************************//
+//
+// The startAPMode() function is executed upon boot of the ESP32.
+// The ESP32 will broadcast a wifi network for the user to connect
+// to and configure the local network wifi credentials. If no user
+// connects after 30 seconds it will continue to boot into the normal
+// operation. 
+//
+//**********************************************************************//
+
+void startAPMode() { 
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP(apSSID, apPassword);
 
@@ -131,7 +168,7 @@ void startAPMode() {
   server.begin();
 }
 
-void connectToWiFi() {
+void connectToWiFi() { // This function connects the ESP32 to the local wifi network
   String ssid = preferences.getString("ssid", "");
   String password = preferences.getString("password", "");
 
@@ -143,14 +180,14 @@ void connectToWiFi() {
   Serial.println("Connected to WiFi");
 }
 
-void task0(void *parameter) {
+void task0(void *parameter) { // This task handles the web page stuff (runs on core 0)
   while (true) {
     server.handleClient();
     delay(10);
   }
 }
 
-void task1(void *parameter) {
+void task1(void *parameter) { // This task cycles the latching relay to trigger the manual feed operation (runs on core 1)
   int taskTrigger;
   while (true) {
     if (xQueueReceive(taskQueue, &taskTrigger, portMAX_DELAY) == pdTRUE) {
@@ -171,7 +208,7 @@ void task1(void *parameter) {
   }
 }
 
-void task2(void *parameter){
+void task2(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
   while (true){
     digitalWrite(BUILTIN_LED, HIGH);
     vTaskDelay(pdMS_TO_TICKS(250));
@@ -180,7 +217,7 @@ void task2(void *parameter){
   }
 }
 
-void setup() {
+void setup() { // Standard setup function for Arduino framework
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
