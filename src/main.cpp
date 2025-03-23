@@ -64,6 +64,10 @@
 #include <Arduino.h>
 #include <HardwareSerial.h>
 
+//#include <iostream>
+//#include <string>
+//using namespace std;
+
 HardwareSerial mySerial(1); // Use hardware Serial1
 
 #define RelaySet 17 // For the Latching Relay Set
@@ -73,8 +77,8 @@ HardwareSerial mySerial(1); // Use hardware Serial1
 #define TX_PIN 5 // Optional, for MB7092 sensor feedback if needed
 //#define analogInputPin 17 // 4
 
-//#define UseMB7092
-#define UseALS
+#define UseMB7092
+//#define UseALS
 
 Preferences preferences;
 QueueHandle_t taskQueue;
@@ -110,42 +114,57 @@ void handleSave() { // If you open the web root page, you can change the wifi cr
 }
 
 void readTankLevel(bool callSource){
-  char string[100];
-  if(callSource == true){
-    strcpy(string, "Feeder Activated!\rCurrent Tank Level: ");
+  char webResponse[130];
+  char sensorData[30];
+  if(callSource){ // If we're coming from the feeder handle, we need to indicate it in our response.
+    strcpy(webResponse, "Feeder Activated!\rCurrent Tank Level: ");
   } else {
-    strcpy(string, "Current Tank Level: ");
+    strcpy(webResponse, "Current Tank Level: "); // Otherwise we're coming from the tank handle, so just the sensor response.
   }
 
-  #ifdef UseALS
+  #ifdef UseALS // Use the Ambient Light Sensor as our data source (left here for troubleshooting).
+    Serial.println("Starting ALS Sensor Reading...");
     int lightLevel = 0;
-    char lightLevelStr [8];
     lightLevel = analogRead(ALS);
-    itoa( lightLevel, lightLevelStr, 10 );
-    //strcat(lightLevelStr, "\n");
-    strcat(string, lightLevelStr);
-    server.send(200, "text/html", string);
+    Serial.println(lightLevel);
+    itoa(lightLevel, sensorData, 10);
   #endif
 
- #ifdef UseMB7092
-  if (mySerial.available()) { // Check if data is available from the sensor
-    String sensorData = mySerial.readStringUntil('\r'); // Read until the carriage return (ASCII 13)
+  #ifdef UseMB7092
+    Serial.println("Clearing the serial buffer...");
+    while(mySerial.available()>0){mySerial.read();} // Clear out all the old data first
+    vTaskDelay(pdMS_TO_TICKS(250)); // Give the sensor some time to give us some more fresh values
     
-    if (sensorData.startsWith("R")) { // Validate the format (starts with 'R')
-      //String range = sensorData.substring(1); // Extract the range value (after 'R')
-      Serial.print("Range in cm: ");
-      //Serial.println(range);
-      Serial.println(sensorData);
+    if(mySerial.available()>0){
+      while(mySerial.read() != '\r'){vTaskDelay(pdMS_TO_TICKS(5));} //Now look for the end of the last data read so we get a fresh start
     } else {
-      Serial.println("Invalid data received.");
+      Serial.println("Serial Data Not Available."); // No serial data was available :(
+      strcpy(sensorData, "Serial Data Not Available.");
     }
-  } else {
-    Serial.println("Serial Data Not Available.");
-  }
-  while(mySerial.available()>0){mySerial.read();}
-  strcat(string, sensorData);
-  server.send(200, "text/html", string);
+    
+    Serial.println("Starting MB7092 Sensor Reading...");
+
+    if (mySerial.available()) { // Check if data is available from the sensor
+      String sensorDataObject = mySerial.readStringUntil('\r'); // Read until the carriage return (ASCII 13)
+      
+      if (sensorDataObject.startsWith("R")) { // Validate the format (starts with 'R')
+        sensorDataObject = sensorDataObject.substring(1); // Extract the range value (after 'R')
+        Serial.print("Range in cm: ");
+        Serial.println(sensorDataObject);
+        strcpy(sensorData, sensorDataObject.c_str()); // Convert the String object into a char array
+      } else {
+        Serial.println("Invalid data received."); // String didn't start with 'R'
+        strcpy(sensorData, "Invalid data received.");
+      }
+    }
+
   #endif
+
+  Serial.println("Building Web Request data...");
+  strcat(webResponse, sensorData); // Append the sensor reading to the string we built based on handler source.
+  strcat(webResponse, "\n"); // Make the response look pretty.
+  Serial.println("Sending back HTML to browser...");
+  server.send(200, "text/html", webResponse);
 }
 
 void handleTank(){
@@ -157,7 +176,7 @@ void handleTank(){
 void handleFeed() { // the /feed GET URL occurred, we need to trigger he task to cycle the relay
   int taskTrigger = 1;
   xQueueSend(taskQueue, &taskTrigger, portMAX_DELAY);
-  vTaskDelay(pdMS_TO_TICKS(3000));
+  //vTaskDelay(pdMS_TO_TICKS(3000));
   readTankLevel(true); // This is to print back some information to the user
 }
 
@@ -190,13 +209,9 @@ void handlePost() {
 void startAPMode() { 
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP(apSSID, apPassword);
-
   dnsServer.start(53, "*", apIP);
-
   server.on("/", handleRoot);
   server.on("/save", HTTP_POST, handleSave);
-  //server.on("/trigger", handleTrigger);
-  //server.on("/trigger", HTTP_POST, handlePost);
   server.begin();
 }
 
