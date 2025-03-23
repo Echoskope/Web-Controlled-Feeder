@@ -66,14 +66,15 @@
 
 HardwareSerial mySerial(1); // Use hardware Serial1
 
-#define PIN_1 17 // For the Latching Relay Set
-#define PIN_2 18 // For the Latching Relay Reset
+#define RelaySet 17 // For the Latching Relay Set
+#define RelayReset 18 // For the Latching Relay Reset
 #define ALS 4 // Built-in Ambient Light Sensor on the FeatherS3 board
-
-// Define FeatherS3 UART pins
 #define RX_PIN 6 // Connect to the TX pin of the MB7092
-//#define TX_PIN 5 // Optional, for sensor feedback if needed
+#define TX_PIN 5 // Optional, for MB7092 sensor feedback if needed
 //#define analogInputPin 17 // 4
+
+//#define UseMB7092
+#define UseALS
 
 Preferences preferences;
 QueueHandle_t taskQueue;
@@ -108,50 +109,56 @@ void handleSave() { // If you open the web root page, you can change the wifi cr
   }
 }
 
-void handleTank(){
-  /*
-  int lightLevel = 0;
-  char string[30] = "Current Tank Level: ";
-  char lightLevelStr [8];
-  lightLevel = analogRead(ALS);
-  itoa( lightLevel, lightLevelStr, 10 );
-  strcat(lightLevelStr, "\n");
-  strcat(string, lightLevelStr);
-  server.send(200, "text/html", string);
-  */
- if (mySerial.available()) { // Check if data is available from the sensor
-  String sensorData = mySerial.readStringUntil('\r'); // Read until the carriage return (ASCII 13)
-  
-  if (sensorData.startsWith("R")) { // Validate the format (starts with 'R')
-    //String range = sensorData.substring(1); // Extract the range value (after 'R')
-    Serial.print("Range in cm: ");
-    //Serial.println(range);
-    Serial.println(sensorData);
+void readTankLevel(bool callSource){
+  char string[100];
+  if(callSource == true){
+    strcpy(string, "Feeder Activated!\rCurrent Tank Level: ");
   } else {
-    Serial.println("Invalid data received.");
+    strcpy(string, "Current Tank Level: ");
   }
-} else {
-  Serial.println("Serial Data Not Available.");
-}
-while(mySerial.available()>0){mySerial.read();}
+
+  #ifdef UseALS
+    int lightLevel = 0;
+    char lightLevelStr [8];
+    lightLevel = analogRead(ALS);
+    itoa( lightLevel, lightLevelStr, 10 );
+    //strcat(lightLevelStr, "\n");
+    strcat(string, lightLevelStr);
+    server.send(200, "text/html", string);
+  #endif
+
+ #ifdef UseMB7092
+  if (mySerial.available()) { // Check if data is available from the sensor
+    String sensorData = mySerial.readStringUntil('\r'); // Read until the carriage return (ASCII 13)
+    
+    if (sensorData.startsWith("R")) { // Validate the format (starts with 'R')
+      //String range = sensorData.substring(1); // Extract the range value (after 'R')
+      Serial.print("Range in cm: ");
+      //Serial.println(range);
+      Serial.println(sensorData);
+    } else {
+      Serial.println("Invalid data received.");
+    }
+  } else {
+    Serial.println("Serial Data Not Available.");
+  }
+  while(mySerial.available()>0){mySerial.read();}
+  strcat(string, sensorData);
+  server.send(200, "text/html", string);
+  #endif
 }
 
-void handleTank2(){
-  int lightLevel = 0;
-  char string[100] = "Feeder Activated.\nCurrent Tank Level: ";
-  char lightLevelStr [8];
-  lightLevel = analogRead(ALS);
-  itoa( lightLevel, lightLevelStr, 10 );
-  strcat(lightLevelStr, "\n");
-  strcat(string, lightLevelStr);
-  server.send(200, "text/html", string);
-}
+void handleTank(){
+  readTankLevel(false);
+  }
+
+
 
 void handleFeed() { // the /feed GET URL occurred, we need to trigger he task to cycle the relay
   int taskTrigger = 1;
   xQueueSend(taskQueue, &taskTrigger, portMAX_DELAY);
-  //erver.send(200, "text/html", "Feeder triggered\n");
-  handleTank2(); // This is to print back some information to the user
+  vTaskDelay(pdMS_TO_TICKS(3000));
+  readTankLevel(true); // This is to print back some information to the user
 }
 
 /*
@@ -217,16 +224,16 @@ void task1(void *parameter) { // This task cycles the latching relay to trigger 
   while (true) {
     if (xQueueReceive(taskQueue, &taskTrigger, portMAX_DELAY) == pdTRUE) {
       if (taskTrigger == 1) {
-        // Turn on PIN_1 for 20 ms
-        digitalWrite(PIN_1, HIGH);
+        // Turn on RelaySet for 20 ms
+        digitalWrite(RelaySet, HIGH);
         vTaskDelay(pdMS_TO_TICKS(50));
-        digitalWrite(PIN_1, LOW);
+        digitalWrite(RelaySet, LOW);
         vTaskDelay(pdMS_TO_TICKS(250));
 
-        // Turn on PIN_2 for 20 ms
-        digitalWrite(PIN_2, HIGH);
+        // Turn on RelayReset for 20 ms
+        digitalWrite(RelayReset, HIGH);
         vTaskDelay(pdMS_TO_TICKS(50));
-        digitalWrite(PIN_2, LOW);
+        digitalWrite(RelayReset, LOW);
         vTaskDelay(pdMS_TO_TICKS(250));
       }
     }
@@ -244,21 +251,20 @@ void task2(void *parameter){ // This task blinks the on board blue LED as a hear
 
 void setup() { // Standard setup function for Arduino framework
   Serial.begin(115200);
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-  pinMode(39, OUTPUT);
-  vTaskDelay(pdMS_TO_TICKS(1000));
-  digitalWrite(39, HIGH);
+  pinMode(LED_BUILTIN, OUTPUT); //Set GPIO as output for built-in Blue LED
+  digitalWrite(LED_BUILTIN, HIGH); // Turn on the built-in Blue LED to indicate board is booting up
+  pinMode(39, OUTPUT); // Set the 3.3V LDO power control pin to output
+  vTaskDelay(pdMS_TO_TICKS(500));
+  digitalWrite(39, HIGH); // Turn on the 2nd 3.3V LDO power supply for the ultrasonic sensor
   mySerial.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN, 1); // Initialize Serial1 for the MB7092
-  //delay(10000);
   Serial.println("FeatherS3 reading MB7092 range sensor data...");
   preferences.begin("wifi-config", false);
 
-  // Start AP mode for 30 seconds
+  // Start AP mode for 30 seconds, if no client connects then proceed with booting.
   startAPMode();
 
   unsigned long startTime = millis();
-  while ((millis() - startTime) < 30000) {
+  while ((millis() - startTime) < 30000) { 
     dnsServer.processNextRequest();
     server.handleClient();
     delay(10);
@@ -273,20 +279,22 @@ void setup() { // Standard setup function for Arduino framework
       return;
     }
   }
-  digitalWrite(LED_BUILTIN, LOW);
+
+  digitalWrite(LED_BUILTIN, LOW); //Turn off built-in Blue LED now that the AP Config time period has elapsed. 
+  
   // No client connected, continue with known credentials
   WiFi.softAPdisconnect(true);
   server.stop();
   connectToWiFi();
 
-  // Initialize pins
-  pinMode(PIN_1, OUTPUT);
-  pinMode(PIN_2, OUTPUT);
+  // Initialize Relay pins
+  pinMode(RelaySet, OUTPUT);
+  pinMode(RelayReset, OUTPUT);
 
   // Initialize the server
   server.on("/", handleRoot);
   server.on("/feed", handleFeed);
-  //server.on("/trigger", HTTP_POST, handlePost);
+  //server.on("/feed", HTTP_POST, handlePost);
   server.on("/tank", handleTank);
   server.begin();
   Serial.println("HTTP server started");
@@ -298,16 +306,15 @@ void setup() { // Standard setup function for Arduino framework
     return;
   }
 
-  // Create task0 on core 0
+  // Create tasks on core 0
   xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(task2, "Task2", 4096, NULL, 1, NULL, 0);
 
-  // Create task1 on core 1
+  // Create task on core 1
   xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);
 
-  xTaskCreatePinnedToCore(task2, "Task2", 4096, NULL, 1, NULL, 0);
+
 }
-
-
 
 void loop() {
   // Keep the main loop empty as tasks are handled in separate cores
