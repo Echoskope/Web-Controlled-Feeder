@@ -62,10 +62,18 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <Arduino.h>
+#include <HardwareSerial.h>
+
+HardwareSerial mySerial(1); // Use hardware Serial1
 
 #define PIN_1 17 // For the Latching Relay Set
 #define PIN_2 18 // For the Latching Relay Reset
 #define ALS 4 // Built-in Ambient Light Sensor on the FeatherS3 board
+
+// Define FeatherS3 UART pins
+#define RX_PIN 6 // Connect to the TX pin of the MB7092
+//#define TX_PIN 5 // Optional, for sensor feedback if needed
+//#define analogInputPin 17 // 4
 
 Preferences preferences;
 QueueHandle_t taskQueue;
@@ -101,6 +109,7 @@ void handleSave() { // If you open the web root page, you can change the wifi cr
 }
 
 void handleTank(){
+  /*
   int lightLevel = 0;
   char string[30] = "Current Tank Level: ";
   char lightLevelStr [8];
@@ -109,6 +118,22 @@ void handleTank(){
   strcat(lightLevelStr, "\n");
   strcat(string, lightLevelStr);
   server.send(200, "text/html", string);
+  */
+ if (mySerial.available()) { // Check if data is available from the sensor
+  String sensorData = mySerial.readStringUntil('\r'); // Read until the carriage return (ASCII 13)
+  
+  if (sensorData.startsWith("R")) { // Validate the format (starts with 'R')
+    //String range = sensorData.substring(1); // Extract the range value (after 'R')
+    Serial.print("Range in cm: ");
+    //Serial.println(range);
+    Serial.println(sensorData);
+  } else {
+    Serial.println("Invalid data received.");
+  }
+} else {
+  Serial.println("Serial Data Not Available.");
+}
+while(mySerial.available()>0){mySerial.read();}
 }
 
 void handleTank2(){
@@ -221,6 +246,12 @@ void setup() { // Standard setup function for Arduino framework
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
+  pinMode(39, OUTPUT);
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  digitalWrite(39, HIGH);
+  mySerial.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN, 1); // Initialize Serial1 for the MB7092
+  //delay(10000);
+  Serial.println("FeatherS3 reading MB7092 range sensor data...");
   preferences.begin("wifi-config", false);
 
   // Start AP mode for 30 seconds
