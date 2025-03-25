@@ -117,9 +117,11 @@ void readTankLevel(bool callSource){
   char webResponse[130];
   char sensorData[30];
   if(callSource){ // If we're coming from the feeder handle, we need to indicate it in our response.
-    strcpy(webResponse, "Feeder Activated!\rCurrent Tank Level: ");
+    strcpy(webResponse, "Feeder Activated!\nCurrent Tank Level: ");
+    //Serial.println("callSource is 1"); vTaskDelay(pdMS_TO_TICKS(100));
   } else {
     strcpy(webResponse, "Current Tank Level: "); // Otherwise we're coming from the tank handle, so just the sensor response.
+    //Serial.println("callSource is 0."); vTaskDelay(pdMS_TO_TICKS(100));
   }
 
   #ifdef UseALS // Use the Ambient Light Sensor as our data source (left here for troubleshooting).
@@ -131,39 +133,39 @@ void readTankLevel(bool callSource){
   #endif
 
   #ifdef UseMB7092
-    Serial.println("Clearing the serial buffer...");
+    //Serial.println("Clearing the serial buffer..."); vTaskDelay(pdMS_TO_TICKS(100));
     while(mySerial.available()>0){mySerial.read();} // Clear out all the old data first
     vTaskDelay(pdMS_TO_TICKS(250)); // Give the sensor some time to give us some more fresh values
     
     if(mySerial.available()>0){
       while(mySerial.read() != '\r'){vTaskDelay(pdMS_TO_TICKS(5));} //Now look for the end of the last data read so we get a fresh start
     } else {
-      Serial.println("Serial Data Not Available."); // No serial data was available :(
+      //Serial.println("Serial Data Not Available."); // No serial data was available :(
       strcpy(sensorData, "Serial Data Not Available.");
     }
     
-    Serial.println("Starting MB7092 Sensor Reading...");
+    //Serial.println("Starting MB7092 Sensor Reading..."); vTaskDelay(pdMS_TO_TICKS(100));
 
     if (mySerial.available()) { // Check if data is available from the sensor
       String sensorDataObject = mySerial.readStringUntil('\r'); // Read until the carriage return (ASCII 13)
       
       if (sensorDataObject.startsWith("R")) { // Validate the format (starts with 'R')
         sensorDataObject = sensorDataObject.substring(1); // Extract the range value (after 'R')
-        Serial.print("Range in cm: ");
-        Serial.println(sensorDataObject);
+        //Serial.print("Range in cm: ");
+        //Serial.println(sensorDataObject); vTaskDelay(pdMS_TO_TICKS(100));
         strcpy(sensorData, sensorDataObject.c_str()); // Convert the String object into a char array
       } else {
-        Serial.println("Invalid data received."); // String didn't start with 'R'
+        //Serial.println("Invalid data received."); // String didn't start with 'R'
         strcpy(sensorData, "Invalid data received.");
       }
     }
 
   #endif
 
-  Serial.println("Building Web Request data...");
+  //Serial.println("Building Web Request data..."); vTaskDelay(pdMS_TO_TICKS(100));
   strcat(webResponse, sensorData); // Append the sensor reading to the string we built based on handler source.
   strcat(webResponse, "\n"); // Make the response look pretty.
-  Serial.println("Sending back HTML to browser...");
+  //Serial.println("Sending back HTML to browser..."); vTaskDelay(pdMS_TO_TICKS(100));
   server.send(200, "text/html", webResponse);
 }
 
@@ -272,7 +274,7 @@ void setup() { // Standard setup function for Arduino framework
   vTaskDelay(pdMS_TO_TICKS(500));
   digitalWrite(39, HIGH); // Turn on the 2nd 3.3V LDO power supply for the ultrasonic sensor
   mySerial.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN, 1); // Initialize Serial1 for the MB7092
-  Serial.println("FeatherS3 reading MB7092 range sensor data...");
+  //Serial.println("FeatherS3 reading MB7092 range sensor data...");
   preferences.begin("wifi-config", false);
 
   // Start AP mode for 30 seconds, if no client connects then proceed with booting.
