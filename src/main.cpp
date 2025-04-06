@@ -1,6 +1,8 @@
 /**********************************************************/
 //  This code was written mostly by Microsoft CoPilot. 
 //
+//   F9:18 <-- Don't worry about this, used for development
+//
 //  General Operation:
 //    Upon power up, the ESP32 will boot into
 //    Wifi AP mode for 30 seconds (blue on board LED 
