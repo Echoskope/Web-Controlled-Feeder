@@ -81,7 +81,7 @@
 //#define UseMB7092
 #define UseALS
 
-//#define BeamBreakSensorActive
+#define BeamBreakSensorActive
 
 HardwareSerial mySerial(1); // Use hardware Serial1
 Preferences preferences;
@@ -205,7 +205,7 @@ void handleSave() { // If you open the web root page, you can change the wifi cr
     preferences.putString("ssid", ssid);
     preferences.putString("password", password);
     server.send(200, "text/html", "Credentials saved. Rebooting...");
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     ESP.restart();
   } else {
     server.send(400, "text/html", "Missing SSID or Password");
@@ -264,7 +264,7 @@ void connectToWiFi() { // This function connects the ESP32 to the local wifi net
 
   WiFi.begin(ssid.c_str(), password.c_str());
   while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     Serial.println("Connecting to WiFi...");
   }
   Serial.println("Connected to WiFi");
@@ -274,7 +274,7 @@ void connectToWiFi() { // This function connects the ESP32 to the local wifi net
 void taskWebServer(void *parameter) { // This task handles the web page stuff (runs on core 0)
   while (true) {
     server.handleClient();
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
@@ -301,24 +301,29 @@ void taskRunManualFeed(void *parameter) { // This task cycles the latching relay
 }
 
 void wifiMonitorTask(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
-  if (WiFi.status() != WL_CONNECTED) {
-    ums3.setPixelBrightness(255/2);
-    connectToWiFi();
+  while(true){
+    if (WiFi.status() != WL_CONNECTED) {
+      ums3.setPixelBrightness(255);
+      connectToWiFi();
+    }
+    vTaskDelay(pdMS_TO_TICKS(10000));
   }
 }
 
 void taskHeartbeatLED(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
+  while(true){
   digitalWrite(BUILTIN_LED, HIGH);
   vTaskDelay(pdMS_TO_TICKS(500));
   digitalWrite(BUILTIN_LED, LOW);
   vTaskDelay(pdMS_TO_TICKS(500));
+  }
 }
 
 void setup() { // Standard setup function for Arduino framework
   Serial.begin(115200);
 
   ums3.begin();
-  ums3.setPixelBrightness(255/2);
+  ums3.setPixelBrightness(255);
   ums3.setPixelPower(true);
   ums3.setPixelColor(UMS3::colorWheel(240));
 
@@ -344,14 +349,14 @@ void setup() { // Standard setup function for Arduino framework
   while ((millis() - startTime) < 30000) { 
     dnsServer.processNextRequest();
     server.handleClient();
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     if (WiFi.softAPgetStationNum() > 0) {
       // Client connected, wait for configuration
       while (WiFi.softAPgetStationNum() > 0) {
         dnsServer.processNextRequest();
         server.handleClient();
-        delay(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
       }
       return;
     }
@@ -380,11 +385,13 @@ void setup() { // Standard setup function for Arduino framework
     Serial.println("Failed to create queue");
     return;
   }
-
+  vTaskDelay(pdMS_TO_TICKS(10));
+  Serial.println("Creating Tasks...");
+  vTaskDelay(pdMS_TO_TICKS(10));
   // Create tasks on core 0
-  xTaskCreatePinnedToCore(taskWebServer, "taskWebServer", 4096, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(taskHeartbeatLED, "taskHeartbeatLED", 4096, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(wifiMonitorTask, "wifimonitorTask", 4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(taskWebServer, "taskWebServer", 4096, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(taskHeartbeatLED, "taskHeartbeatLED", 4096, NULL, 3, NULL, 0);
+  //xTaskCreatePinnedToCore(wifiMonitorTask, "wifimonitorTask", 4096, NULL, 2, NULL, 0);
 
   // Create task on core 1
   xTaskCreatePinnedToCore(taskRunManualFeed, "taskRunManualFeed", 4096, NULL, 1, NULL, 1);
