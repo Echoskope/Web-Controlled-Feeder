@@ -121,7 +121,8 @@ void readTankLevel(bool callSource){//, BeamBreakSensor& beamBreakSensor1){
   char feedJamIndicator[45];
 
   if(callSource){ // If we're coming from the feeder handle
-    strcpy(webResponse, "Feeder Activated!\nCurrent Tank Level: ");
+    //strcpy(webResponse, "Feeder Activated!\nCurrent Tank Level: "); // Removed for now since sensors are not implemented
+    strcpy(webResponse, "Feeder Activated!\n");
     #ifdef BeamBreakSensorActive
       Serial.print("Beam Break Before: ");
       Serial.println(beamBreakSensor1.beamBreakISRdisabled);
@@ -187,11 +188,19 @@ void readTankLevel(bool callSource){//, BeamBreakSensor& beamBreakSensor1){
   #endif
 
   //Serial.println("Building Web Request data..."); vTaskDelay(pdMS_TO_TICKS(100));
+
+  /* removing this section since the sensors are not currnetly implemented
   strcat(webResponse, sensorData); // Append the sensor reading to the string we built based on handler source.
   strcat(webResponse, "\n"); // Make the response look pretty.
   strcat(webResponse, feedJamIndicator);
+  */
+
   //Serial.println("Sending back HTML to browser..."); vTaskDelay(pdMS_TO_TICKS(100));
   server.send(200, "text/html", webResponse);
+}
+
+void handlePing() { // Add a basic health check response
+  server.send(200, "text/html", "Feeder is online.\n");
 }
 
 void handleRoot() {
@@ -255,6 +264,7 @@ void startAPMode() {
   WiFi.softAP(apSSID, apPassword);
   dnsServer.start(53, "*", apIP);
   server.on("/", handleRoot);
+  server.on("/ping", handlePing);
   server.on("/save", HTTP_POST, handleSave);
   server.begin();
 }
@@ -381,6 +391,7 @@ void setup() { // Standard setup function for Arduino framework
 
   // Initialize the server
   server.on("/", handleRoot);
+  server.on("/ping", handlePing);
   server.on("/feed", handleFeed);
   //server.on("/feed", HTTP_POST, handlePost);
   server.on("/tank", handleTank);
