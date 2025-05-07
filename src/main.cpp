@@ -280,7 +280,6 @@ void taskWebServer(void *parameter) { // This task handles the web page stuff (r
 
 void taskRunManualFeed(void *parameter) { // This task cycles the latching relay to trigger the manual feed operation (runs on core 1)
   int taskTrigger;
-  
   while (true) {
     if (xQueueReceive(taskQueue, &taskTrigger, portMAX_DELAY) == pdTRUE) {
       if (taskTrigger == 1) {
@@ -301,7 +300,7 @@ void taskRunManualFeed(void *parameter) { // This task cycles the latching relay
 }
 
 void wifiMonitorTask(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
-  while(true){
+  while(true) {
     if (WiFi.status() != WL_CONNECTED) {
       ums3.setPixelBrightness(255);
       connectToWiFi();
@@ -311,7 +310,7 @@ void wifiMonitorTask(void *parameter){ // This task blinks the on board blue LED
 }
 
 void taskHeartbeatLED(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
-  while(true){
+  while(true) {
   digitalWrite(BUILTIN_LED, HIGH);
   vTaskDelay(pdMS_TO_TICKS(500));
   digitalWrite(BUILTIN_LED, LOW);
@@ -391,7 +390,7 @@ void setup() { // Standard setup function for Arduino framework
   // Create tasks on core 0
   xTaskCreatePinnedToCore(taskWebServer, "taskWebServer", 4096, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(taskHeartbeatLED, "taskHeartbeatLED", 4096, NULL, 3, NULL, 0);
-  //xTaskCreatePinnedToCore(wifiMonitorTask, "wifimonitorTask", 4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(wifiMonitorTask, "wifimonitorTask", 4096, NULL, 2, NULL, 0);
 
   // Create task on core 1
   xTaskCreatePinnedToCore(taskRunManualFeed, "taskRunManualFeed", 4096, NULL, 1, NULL, 1);
