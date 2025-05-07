@@ -80,6 +80,7 @@
 //#define UseMB7092
 #define UseALS
 
+//#define BeamBreakSensorActive
 
 HardwareSerial mySerial(1); // Use hardware Serial1
 Preferences preferences;
@@ -103,11 +104,13 @@ struct BeamBreakSensor {
 
 volatile BeamBreakSensor beamBreakSensor1 = {11, true};
 
+#ifdef BeamBreakSensorActive
 void IRAM_ATTR isr(){
   detachInterrupt(beamBreakSensor1.PIN); // Turn off the interrupt so it isn't trying to call the ISR when not needed
   beamBreakSensor1.beamBreakISRdisabled = true;
   //Serial.println("Beam Break Sensor Activated!");
 }
+#endif
 
 void readTankLevel(bool callSource){//, BeamBreakSensor& beamBreakSensor1){
   char webResponse[200];
@@ -116,26 +119,27 @@ void readTankLevel(bool callSource){//, BeamBreakSensor& beamBreakSensor1){
 
   if(callSource){ // If we're coming from the feeder handle
     strcpy(webResponse, "Feeder Activated!\nCurrent Tank Level: ");
-    Serial.print("Beam Break Before: ");
-    Serial.println(beamBreakSensor1.beamBreakISRdisabled);
-    if(beamBreakSensor1.beamBreakISRdisabled == true){ //We need to enable the interrupt
-      beamBreakSensor1.beamBreakISRdisabled = false; // Reset before we check further down after the delay to allow the feed to drop
-      Serial.print("Beam Break False?: ");
+    #ifdef BeamBreakSensorActive
+      Serial.print("Beam Break Before: ");
       Serial.println(beamBreakSensor1.beamBreakISRdisabled);
-      attachInterrupt(beamBreakSensor1.PIN, isr, FALLING); // Set the interrupt so that anytime the beam breaks the function is called
-    }
-    //Serial.println("callSource is 1"); vTaskDelay(pdMS_TO_TICKS(100));
-    vTaskDelay(pdMS_TO_TICKS(5000)); //Wait 5 seconds for the grain to break the sensor
-    Serial.print("Beam Break After: ");
-    Serial.println(beamBreakSensor1.beamBreakISRdisabled);    
-    if(beamBreakSensor1.beamBreakISRdisabled == true){ //The ISR was called, the interrupt remains disabled
-      strcpy(feedJamIndicator, "Beam Break Sensor Activated!\n");
-    } else {
-      detachInterrupt(beamBreakSensor1.PIN); // If the ISR wasn't called, we need to still disable the interrupt
-      beamBreakSensor1.beamBreakISRdisabled = true; // Reset so we go back through the ISR enable process next time
-      strcpy(feedJamIndicator, "ERROR: Beam Break Sensor Not Activated!\n");
-
-    }
+      if(beamBreakSensor1.beamBreakISRdisabled == true){ //We need to enable the interrupt
+        beamBreakSensor1.beamBreakISRdisabled = false; // Reset before we check further down after the delay to allow the feed to drop
+        Serial.print("Beam Break False?: ");
+        Serial.println(beamBreakSensor1.beamBreakISRdisabled);
+        attachInterrupt(beamBreakSensor1.PIN, isr, FALLING); // Set the interrupt so that anytime the beam breaks the function is called
+      }
+      //Serial.println("callSource is 1"); vTaskDelay(pdMS_TO_TICKS(100));
+      vTaskDelay(pdMS_TO_TICKS(5000)); //Wait 5 seconds for the grain to break the sensor
+      Serial.print("Beam Break After: ");
+      Serial.println(beamBreakSensor1.beamBreakISRdisabled);    
+      if(beamBreakSensor1.beamBreakISRdisabled == true){ //The ISR was called, the interrupt remains disabled
+        strcpy(feedJamIndicator, "Beam Break Sensor Activated!\n");
+      } else {
+        detachInterrupt(beamBreakSensor1.PIN); // If the ISR wasn't called, we need to still disable the interrupt
+        beamBreakSensor1.beamBreakISRdisabled = true; // Reset so we go back through the ISR enable process next time
+        strcpy(feedJamIndicator, "ERROR: Beam Break Sensor Not Activated!\n");
+      }
+    #endif
   } else {
     strcpy(webResponse, "Current Tank Level: "); // Otherwise we're coming from the tank handle, so just the sensor response.
     //Serial.println("callSource is 0."); vTaskDelay(pdMS_TO_TICKS(100));
