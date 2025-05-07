@@ -77,8 +77,8 @@ HardwareSerial mySerial(1); // Use hardware Serial1
 #define TX_PIN 5 // Optional, for MB7092 sensor feedback if needed
 //#define analogInputPin 17 // 4
 
-#define UseMB7092
-//#define UseALS
+//#define UseMB7092
+#define UseALS
 
 Preferences preferences;
 QueueHandle_t taskQueue;
