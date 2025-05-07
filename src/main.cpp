@@ -65,6 +65,7 @@
 #include <Preferences.h>
 #include <Arduino.h>
 #include <HardwareSerial.h>
+#include <UMS3.h>
 
 #define RelaySet 17 // For the Latching Relay Set
 #define RelayReset 18 // For the Latching Relay Reset
@@ -87,6 +88,7 @@ Preferences preferences;
 QueueHandle_t taskQueue;
 WebServer server(80);
 DNSServer dnsServer;
+UMS3 ums3;
 
 //**********************************************//
 // the apSSID and apPassword is for when the ESP32
@@ -97,6 +99,7 @@ const char* apSSID = "ESP32_Config";
 const char* apPassword = "12345678";
 IPAddress apIP(192,168,4,1);
 
+#ifdef BeamBreakSensorActive
 struct BeamBreakSensor {
   const uint8_t PIN;
   bool beamBreakISRdisabled; 
@@ -104,7 +107,6 @@ struct BeamBreakSensor {
 
 volatile BeamBreakSensor beamBreakSensor1 = {11, true};
 
-#ifdef BeamBreakSensorActive
 void IRAM_ATTR isr(){
   detachInterrupt(beamBreakSensor1.PIN); // Turn off the interrupt so it isn't trying to call the ISR when not needed
   beamBreakSensor1.beamBreakISRdisabled = true;
@@ -266,6 +268,7 @@ void connectToWiFi() { // This function connects the ESP32 to the local wifi net
     Serial.println("Connecting to WiFi...");
   }
   Serial.println("Connected to WiFi");
+  ums3.setPixelBrightness(0);
 }
 
 void taskWebServer(void *parameter) { // This task handles the web page stuff (runs on core 0)
@@ -297,17 +300,28 @@ void taskRunManualFeed(void *parameter) { // This task cycles the latching relay
   }
 }
 
-void taskHeartbeatLED(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
-  while (true){
-    digitalWrite(BUILTIN_LED, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    digitalWrite(BUILTIN_LED, LOW);
-    vTaskDelay(pdMS_TO_TICKS(500));
+void wifiMonitorTask(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
+  if (WiFi.status() != WL_CONNECTED) {
+    ums3.setPixelBrightness(255/2);
+    connectToWiFi();
   }
+}
+
+void taskHeartbeatLED(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
+  digitalWrite(BUILTIN_LED, HIGH);
+  vTaskDelay(pdMS_TO_TICKS(500));
+  digitalWrite(BUILTIN_LED, LOW);
+  vTaskDelay(pdMS_TO_TICKS(500));
 }
 
 void setup() { // Standard setup function for Arduino framework
   Serial.begin(115200);
+
+  ums3.begin();
+  ums3.setPixelBrightness(255/2);
+  ums3.setPixelPower(true);
+  ums3.setPixelColor(UMS3::colorWheel(240));
+
   pinMode(LED_BUILTIN, OUTPUT); //Set GPIO as output for built-in Blue LED
   digitalWrite(LED_BUILTIN, HIGH); // Turn on the built-in Blue LED to indicate board is booting up
   pinMode(39, OUTPUT); // Set the 3.3V LDO power control pin to output
@@ -370,6 +384,7 @@ void setup() { // Standard setup function for Arduino framework
   // Create tasks on core 0
   xTaskCreatePinnedToCore(taskWebServer, "taskWebServer", 4096, NULL, 2, NULL, 0);
   xTaskCreatePinnedToCore(taskHeartbeatLED, "taskHeartbeatLED", 4096, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(wifiMonitorTask, "wifimonitorTask", 4096, NULL, 2, NULL, 0);
 
   // Create task on core 1
   xTaskCreatePinnedToCore(taskRunManualFeed, "taskRunManualFeed", 4096, NULL, 1, NULL, 1);
