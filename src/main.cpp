@@ -1,6 +1,8 @@
 /**********************************************************/
 //  This code was written mostly by Microsoft CoPilot. 
 //
+//   F9:18 <-- Don't worry about this, used for development
+//
 //  General Operation:
 //    Upon power up, the ESP32 will boot into
 //    Wifi AP mode for 30 seconds (blue on board LED 
@@ -64,22 +66,22 @@
 #include <Arduino.h>
 #include <HardwareSerial.h>
 
-//#include <iostream>
-//#include <string>
-//using namespace std;
-
-HardwareSerial mySerial(1); // Use hardware Serial1
-
 #define RelaySet 17 // For the Latching Relay Set
 #define RelayReset 18 // For the Latching Relay Reset
 #define ALS 4 // Built-in Ambient Light Sensor on the FeatherS3 board
 #define RX_PIN 6 // Connect to the TX pin of the MB7092
 #define TX_PIN 5 // Optional, for MB7092 sensor feedback if needed
-//#define analogInputPin 17 // 4
 
+//*********************************//
+// These two #define are used to
+// tell the sensor reading code
+// which sensor to read!
+//********************************//
 //#define UseMB7092
 #define UseALS
 
+
+HardwareSerial mySerial(1); // Use hardware Serial1
 Preferences preferences;
 QueueHandle_t taskQueue;
 WebServer server(80);
@@ -94,31 +96,46 @@ const char* apSSID = "ESP32_Config";
 const char* apPassword = "12345678";
 IPAddress apIP(192,168,4,1);
 
-void handleRoot() {
-  String html = "<form action='/save' method='POST'><input type='text' name='ssid' placeholder='SSID'><br><input type='text' name='password' placeholder='Password'><br><input type='submit' value='Save'></form>";
-  server.send(200, "text/html", html);
+struct BeamBreakSensor {
+  const uint8_t PIN;
+  bool beamBreakISRdisabled; 
+};
+
+volatile BeamBreakSensor beamBreakSensor1 = {11, true};
+
+void IRAM_ATTR isr(){
+  detachInterrupt(beamBreakSensor1.PIN); // Turn off the interrupt so it isn't trying to call the ISR when not needed
+  beamBreakSensor1.beamBreakISRdisabled = true;
+  //Serial.println("Beam Break Sensor Activated!");
 }
 
-void handleSave() { // If you open the web root page, you can change the wifi credentials 
-  if (server.hasArg("ssid") && server.hasArg("password")) {
-    String ssid = server.arg("ssid");
-    String password = server.arg("password");
-    preferences.putString("ssid", ssid);
-    preferences.putString("password", password);
-    server.send(200, "text/html", "Credentials saved. Rebooting...");
-    delay(1000);
-    ESP.restart();
-  } else {
-    server.send(400, "text/html", "Missing SSID or Password");
-  }
-}
-
-void readTankLevel(bool callSource){
-  char webResponse[130];
+void readTankLevel(bool callSource){//, BeamBreakSensor& beamBreakSensor1){
+  char webResponse[200];
   char sensorData[30];
-  if(callSource){ // If we're coming from the feeder handle, we need to indicate it in our response.
+  char feedJamIndicator[45];
+
+  if(callSource){ // If we're coming from the feeder handle
     strcpy(webResponse, "Feeder Activated!\nCurrent Tank Level: ");
+    Serial.print("Beam Break Before: ");
+    Serial.println(beamBreakSensor1.beamBreakISRdisabled);
+    if(beamBreakSensor1.beamBreakISRdisabled == true){ //We need to enable the interrupt
+      beamBreakSensor1.beamBreakISRdisabled = false; // Reset before we check further down after the delay to allow the feed to drop
+      Serial.print("Beam Break False?: ");
+      Serial.println(beamBreakSensor1.beamBreakISRdisabled);
+      attachInterrupt(beamBreakSensor1.PIN, isr, FALLING); // Set the interrupt so that anytime the beam breaks the function is called
+    }
     //Serial.println("callSource is 1"); vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(5000)); //Wait 5 seconds for the grain to break the sensor
+    Serial.print("Beam Break After: ");
+    Serial.println(beamBreakSensor1.beamBreakISRdisabled);    
+    if(beamBreakSensor1.beamBreakISRdisabled == true){ //The ISR was called, the interrupt remains disabled
+      strcpy(feedJamIndicator, "Beam Break Sensor Activated!\n");
+    } else {
+      detachInterrupt(beamBreakSensor1.PIN); // If the ISR wasn't called, we need to still disable the interrupt
+      beamBreakSensor1.beamBreakISRdisabled = true; // Reset so we go back through the ISR enable process next time
+      strcpy(feedJamIndicator, "ERROR: Beam Break Sensor Not Activated!\n");
+
+    }
   } else {
     strcpy(webResponse, "Current Tank Level: "); // Otherwise we're coming from the tank handle, so just the sensor response.
     //Serial.println("callSource is 0."); vTaskDelay(pdMS_TO_TICKS(100));
@@ -165,21 +182,39 @@ void readTankLevel(bool callSource){
   //Serial.println("Building Web Request data..."); vTaskDelay(pdMS_TO_TICKS(100));
   strcat(webResponse, sensorData); // Append the sensor reading to the string we built based on handler source.
   strcat(webResponse, "\n"); // Make the response look pretty.
+  strcat(webResponse, feedJamIndicator);
   //Serial.println("Sending back HTML to browser..."); vTaskDelay(pdMS_TO_TICKS(100));
   server.send(200, "text/html", webResponse);
 }
 
-void handleTank(){
-  readTankLevel(false);
+void handleRoot() {
+  String html = "<form action='/save' method='POST'><input type='text' name='ssid' placeholder='SSID'><br><input type='text' name='password' placeholder='Password'><br><input type='submit' value='Save'></form>";
+  server.send(200, "text/html", html);
+}
+
+void handleSave() { // If you open the web root page, you can change the wifi credentials 
+  if (server.hasArg("ssid") && server.hasArg("password")) {
+    String ssid = server.arg("ssid");
+    String password = server.arg("password");
+    preferences.putString("ssid", ssid);
+    preferences.putString("password", password);
+    server.send(200, "text/html", "Credentials saved. Rebooting...");
+    delay(1000);
+    ESP.restart();
+  } else {
+    server.send(400, "text/html", "Missing SSID or Password");
   }
+}
 
-
+void handleTank(){
+  readTankLevel(false);//, beamBreakSensor1);
+  }
 
 void handleFeed() { // the /feed GET URL occurred, we need to trigger he task to cycle the relay
   int taskTrigger = 1;
   xQueueSend(taskQueue, &taskTrigger, portMAX_DELAY);
   //vTaskDelay(pdMS_TO_TICKS(3000));
-  readTankLevel(true); // This is to print back some information to the user
+  readTankLevel(true);//, beamBreakSensor1); // This is to print back some information to the user
 }
 
 /*
@@ -229,15 +264,16 @@ void connectToWiFi() { // This function connects the ESP32 to the local wifi net
   Serial.println("Connected to WiFi");
 }
 
-void task0(void *parameter) { // This task handles the web page stuff (runs on core 0)
+void taskWebServer(void *parameter) { // This task handles the web page stuff (runs on core 0)
   while (true) {
     server.handleClient();
     delay(10);
   }
 }
 
-void task1(void *parameter) { // This task cycles the latching relay to trigger the manual feed operation (runs on core 1)
+void taskRunManualFeed(void *parameter) { // This task cycles the latching relay to trigger the manual feed operation (runs on core 1)
   int taskTrigger;
+  
   while (true) {
     if (xQueueReceive(taskQueue, &taskTrigger, portMAX_DELAY) == pdTRUE) {
       if (taskTrigger == 1) {
@@ -257,12 +293,12 @@ void task1(void *parameter) { // This task cycles the latching relay to trigger 
   }
 }
 
-void task2(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
+void taskHeartbeatLED(void *parameter){ // This task blinks the on board blue LED as a heartbeat (runs on core 0)
   while (true){
     digitalWrite(BUILTIN_LED, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(250));
+    vTaskDelay(pdMS_TO_TICKS(500));
     digitalWrite(BUILTIN_LED, LOW);
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
@@ -274,7 +310,13 @@ void setup() { // Standard setup function for Arduino framework
   vTaskDelay(pdMS_TO_TICKS(500));
   digitalWrite(39, HIGH); // Turn on the 2nd 3.3V LDO power supply for the ultrasonic sensor
   mySerial.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN, 1); // Initialize Serial1 for the MB7092
-  //Serial.println("FeatherS3 reading MB7092 range sensor data...");
+
+  pinMode(11, INPUT_PULLUP); //Beam break sensor requires a pull up! 
+
+  // Initialize Relay pins
+  pinMode(RelaySet, OUTPUT);
+  pinMode(RelayReset, OUTPUT);
+
   preferences.begin("wifi-config", false);
 
   // Start AP mode for 30 seconds, if no client connects then proceed with booting.
@@ -304,9 +346,7 @@ void setup() { // Standard setup function for Arduino framework
   server.stop();
   connectToWiFi();
 
-  // Initialize Relay pins
-  pinMode(RelaySet, OUTPUT);
-  pinMode(RelayReset, OUTPUT);
+ 
 
   // Initialize the server
   server.on("/", handleRoot);
@@ -324,13 +364,11 @@ void setup() { // Standard setup function for Arduino framework
   }
 
   // Create tasks on core 0
-  xTaskCreatePinnedToCore(task0, "Task0", 4096, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(task2, "Task2", 4096, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(taskWebServer, "taskWebServer", 4096, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(taskHeartbeatLED, "taskHeartbeatLED", 4096, NULL, 1, NULL, 0);
 
   // Create task on core 1
-  xTaskCreatePinnedToCore(task1, "Task1", 4096, NULL, 1, NULL, 1);
-
-
+  xTaskCreatePinnedToCore(taskRunManualFeed, "taskRunManualFeed", 4096, NULL, 1, NULL, 1);
 }
 
 void loop() {
