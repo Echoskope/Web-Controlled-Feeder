@@ -72,6 +72,7 @@
 #define ALS 4 // Built-in Ambient Light Sensor on the FeatherS3 board
 #define RX_PIN 6 // Connect to the TX pin of the MB7092
 #define TX_PIN 5 // Optional, for MB7092 sensor feedback if needed
+#define devMode 1 // Used to make the AP delay shorter for quicker cycling
 
 //*********************************//
 // These two #define are used to
@@ -344,8 +345,16 @@ void setup() { // Standard setup function for Arduino framework
   // Start AP mode for 30 seconds, if no client connects then proceed with booting.
   startAPMode();
 
+  int apTimeout = 0;
+  if(devMode){
+    apTimeout = 1000;
+  }else{
+    apTimeout = 30000;
+  }
+  
+  int apTImeout = 30000;
   unsigned long startTime = millis();
-  while ((millis() - startTime) < 30000) { 
+  while ((millis() - startTime) < apTimeout) { 
     dnsServer.processNextRequest();
     server.handleClient();
     vTaskDelay(pdMS_TO_TICKS(10));
