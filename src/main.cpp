@@ -77,8 +77,9 @@
 // tell the sensor reading code
 // which sensor to read!
 //********************************//
-#define UseMB7092
-//#define UseALS
+//#define UseMB7092
+#define UseALS
+
 
 HardwareSerial mySerial(1); // Use hardware Serial1
 Preferences preferences;
