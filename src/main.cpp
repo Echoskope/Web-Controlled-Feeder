@@ -82,7 +82,7 @@
 //#define UseMB7092
 #define UseALS
 
-#define BeamBreakSensorActive
+//#define BeamBreakSensorActive
 
 HardwareSerial mySerial(1); // Use hardware Serial1
 Preferences preferences;
@@ -206,7 +206,7 @@ void handleSave() { // If you open the web root page, you can change the wifi cr
     preferences.putString("ssid", ssid);
     preferences.putString("password", password);
     server.send(200, "text/html", "Credentials saved. Rebooting...");
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(15000));
     ESP.restart();
   } else {
     server.send(400, "text/html", "Missing SSID or Password");
